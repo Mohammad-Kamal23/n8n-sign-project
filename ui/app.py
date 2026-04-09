@@ -3,7 +3,7 @@ import requests
 import base64
 
 # The internal Docker network URL to talk to your FastAPI backend
-API_URL = "http://fastapi:8000/stamp-document/"
+API_URL = "https://automated-signage.onrender.com/stamp-document/"
 
 # Configure the page
 st.set_page_config(page_title="Automated Signage", page_icon="✍️", layout="wide")
