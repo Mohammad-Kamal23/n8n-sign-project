@@ -1,17 +1,16 @@
 from fastapi import FastAPI, File, UploadFile, Query
 from fastapi.responses import StreamingResponse
-import uvicorn
 import fitz  # PyMuPDF
 import io
 import os
 
-app = FastAPI(title="Signage Stamping API")
+app = FastAPI(title="Professional Signage API")
 
-# --- Professional Placement Constants ---
-STAMP_WIDTH = 130
-STAMP_HEIGHT = 65
-Y_OFFSET = 12
-OVERLAP_LIMIT = 0.1 
+# --- Professional Placement & Size Constants ---
+STAMP_WIDTH = 115   # Controlled size for a professional look
+STAMP_HEIGHT = 55
+Y_OFFSET = 18       # Increased distance to prevent covering text
+COLLISION_LIMIT = 0.05 # Strict overlap prevention (5% max)
 
 @app.get("/")
 def read_root():
@@ -23,6 +22,7 @@ async def process_document(file: UploadFile = File(...)):
     file_content = await file.read()
     doc = fitz.open(stream=file_content, filetype="pdf")
     
+    # Anchor list exactly as defined in your documentation
     anchors = [
         "Signature", "Signed by", "Sign here", "Approved by", "Stamp",
         "توقيع", "الموقع", "وقع هنا", "ختم", "يصادق", "المفوض بالتوقيع", "اعتماد"
@@ -33,16 +33,16 @@ async def process_document(file: UploadFile = File(...)):
 
     for page_num in range(len(doc)):
         page = doc[page_num]
-        # Improved word-level extraction for better Arabic/English detection
-        words = page.get_text("words") 
-        for w in words:
-            clean_text = w[4].strip().strip(':').strip('.')
-            if any(anchor.lower() in clean_text.lower() for anchor in anchors):
-                found_word = clean_text
-                # Return professional centered coordinates
+        # Dual-detection approach for maximum accuracy
+        for anchor in anchors:
+            instances = page.search_for(anchor)
+            if instances:
+                match = instances[0]
+                found_word = anchor
+                # Calculate professional centered placement
                 target_coords = {
-                    "x": round(float((w[0] + w[2]) / 2 - (STAMP_WIDTH / 2)), 2),
-                    "y": round(float(w[3] + Y_OFFSET), 2), 
+                    "x": round(float((match.x0 + match.x1)/2 - (STAMP_WIDTH/2)), 2),
+                    "y": round(float(match.y1 + Y_OFFSET), 2), 
                     "page": page_num + 1
                 }
                 break
@@ -51,11 +51,7 @@ async def process_document(file: UploadFile = File(...)):
 
     if not target_coords:
         last_page = doc[-1]
-        target_coords = {
-            "x": round(float(last_page.rect.width - 150), 2),
-            "y": round(float(last_page.rect.height - 100), 2),
-            "page": len(doc)
-        }
+        target_coords = {"x": 400.0, "y": 700.0, "page": len(doc)}
 
     return {
         "filename": file.filename,
@@ -72,7 +68,7 @@ async def stamp_document(
     y: float = Query(None), 
     page_num: int = Query(None)
 ):
-    """Preserved: Applies stamps. If x/y aren't provided, it uses 'Stamp Everywhere' logic."""
+    """Applies stamps with spatial prevention to ensure professional alignment."""
     file_content = await file.read()
     doc = fitz.open(stream=file_content, filetype="pdf")
     
@@ -86,50 +82,50 @@ async def stamp_document(
     ]
     
     stamps_applied = 0
-    applied_areas = []
 
-    # 1. Manual Stamping (If n8n/User provides exact coordinates)
+    # 1. Manual Stamping (Preserved for n8n)
     if x is not None and y is not None and page_num is not None:
         target_page = doc[page_num - 1]
         stamp_rect = fitz.Rect(x, y, x + STAMP_WIDTH, y + STAMP_HEIGHT)
         target_page.insert_image(stamp_rect, filename=stamp_path)
         stamps_applied += 1
 
-    # 2. Automated Stamping (The "Stamp Everywhere" Fix)
+    # 2. Automated "Professional" Stamping
     else:
         for page in doc:
-            words = page.get_text("words")
-            for w in words:
-                clean_text = w[4].strip().strip(':').strip('.')
-                if any(anchor.lower() in clean_text.lower() for anchor in anchors):
-                    # Calculate professional center-aligned placement
-                    word_x_center = (w[0] + w[2]) / 2
-                    word_y_bottom = w[3]
+            applied_on_page = [] # Reset for every page to prevent cross-page skipping
+
+            for anchor in anchors:
+                # search_for is superior for Arabic bullet points and RTL text
+                instances = page.search_for(anchor)
+                
+                for inst in instances:
+                    # Professional horizontal centering
+                    center_x = (inst.x0 + inst.x1) / 2
+                    s_x0 = center_x - (STAMP_WIDTH / 2)
+                    s_y0 = inst.y1 + Y_OFFSET
                     
-                    s_x0 = word_x_center - (STAMP_WIDTH / 2)
-                    s_y0 = word_y_bottom + Y_OFFSET
                     new_rect = fitz.Rect(s_x0, s_y0, s_x0 + STAMP_WIDTH, s_y0 + STAMP_HEIGHT)
 
-                    # Collision Prevention: Don't stamp the same spot twice (Fixes English mess)
-                    is_overlapping = False
-                    for existing in applied_areas:
+                    # Logic: Prevent stamping too close to another stamp
+                    is_collision = False
+                    for existing in applied_on_page:
                         if new_rect.intersects(existing):
-                            if (new_rect & existing).get_area() > (new_rect.get_area() * OVERLAP_LIMIT):
-                                is_overlapping = True
+                            intersection = new_rect & existing
+                            if intersection.get_area() > (new_rect.get_area() * COLLISION_LIMIT):
+                                is_collision = True
                                 break
                     
-                    if not is_overlapping:
+                    if not is_collision:
                         page.insert_image(new_rect, filename=stamp_path)
-                        applied_areas.append(new_rect)
+                        applied_on_page.append(new_rect)
                         stamps_applied += 1
 
-    # 3. Fail-Safe: Bottom Right of Last Page
+    # 3. Fail-Safe: Bottom Right
     if stamps_applied == 0:
         last_page = doc[-1]
-        s_x0 = round(float(last_page.rect.width - STAMP_WIDTH - 20), 2)
-        s_y0 = round(float(last_page.rect.height - STAMP_HEIGHT - 20), 2)
-        stamp_rect = fitz.Rect(s_x0, s_y0, s_x0 + STAMP_WIDTH, s_y0 + STAMP_HEIGHT)
-        last_page.insert_image(stamp_rect, filename=stamp_path)
+        rect = fitz.Rect(400, 700, 400 + STAMP_WIDTH, 700 + STAMP_HEIGHT)
+        last_page.insert_image(rect, filename=stamp_path)
     
     out_pdf = io.BytesIO()
     doc.save(out_pdf)
@@ -139,5 +135,5 @@ async def stamp_document(
     return StreamingResponse(
         out_pdf, 
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=stamped_{file.filename}"}
+        headers={"Content-Disposition": f"attachment; filename=signed_{file.filename}"}
     )
