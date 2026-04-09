@@ -1,6 +1,6 @@
 import streamlit as st
 import requests
-import base64
+from streamlit_pdf_viewer import pdf_viewer
 
 # The internal Docker network URL to talk to your FastAPI backend
 API_URL = "https://automated-signage.onrender.com/stamp-document/"
@@ -62,10 +62,8 @@ if uploaded_file:
 
     with col1:
         st.subheader("📄 Original Document")
-        # Render the PDF in the browser using base64
-        base64_pdf = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf" style="border-radius: 10px;"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
+        # Safely render the PDF using the dedicated viewer
+        pdf_viewer(uploaded_file.getvalue(), width=700)
 
     with col2:
         st.subheader("✅ Approval & Stamping")
@@ -82,10 +80,8 @@ if uploaded_file:
                         st.success("Stamping Complete! Found and stamped keywords.")
                         stamped_pdf = response.content
 
-                        # Display the Stamped PDF
-                        base64_stamped = base64.b64encode(stamped_pdf).decode('utf-8')
-                        stamped_display = f'<iframe src="data:application/pdf;base64,{base64_stamped}" width="100%" height="480" type="application/pdf" style="border-radius: 10px; border: 2px solid #28a745;"></iframe>'
-                        st.markdown(stamped_display, unsafe_allow_html=True)
+                        # Display the Stamped PDF safely
+                        pdf_viewer(stamped_pdf, width=700)
 
                         # Provide Download Button
                         st.download_button(
