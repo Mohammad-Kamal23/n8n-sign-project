@@ -1,0 +1,62 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n_core
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Amman
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - signage_network
+
+  fastapi:
+    build: ./backend
+    container_name: signage_api
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      - signage_network
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    container_name: signage_db
+    restart: always
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=secretpassword
+      - POSTGRES_DB=signage_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - signage_network
+  ui:
+    build: ./ui
+    container_name: signage_ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - fastapi
+    networks:
+      - signage_network
+volumes:
+  n8n_data:
+  postgres_data:
+
+networks:
+  signage_network:
+    driver: bridge
