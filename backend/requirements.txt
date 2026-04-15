@@ -2,3 +2,14 @@ fastapi
 uvicorn
 python-multipart
 PyMuPDF
+sqlalchemy
+psycopg2-binary
+easyocr
+numpy
+torch
+torchvision
+transformers==4.44.2
+einops
+timm==1.0.9
+opencv-python-headless
+Pillow

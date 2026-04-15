@@ -2,3 +2,15 @@ __pycache__/
 *.pdf
 stamp.png
 .DS_Store
+
+# Security & Credentials
+.env
+security_ops/
+
+# Databases and Local Storage
+n8n-data/
+simulated_cloud/
+
+# AI Models
+models_cache/
+*.pyc
