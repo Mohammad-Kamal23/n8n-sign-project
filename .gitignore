@@ -1,16 +1,17 @@
 __pycache__/
-*.pdf
-stamp.png
+*.pyc
 .DS_Store
+desktop.ini
 
-# Security & Credentials
+# Secrets and local settings
 .env
 security_ops/
 
-# Databases and Local Storage
+# Your own stamp / signature and documents never go into git
+backend/stamp.png
+*.pdf
+
+# Runtime data
 n8n-data/
 simulated_cloud/
-
-# AI Models
 models_cache/
-*.pyc

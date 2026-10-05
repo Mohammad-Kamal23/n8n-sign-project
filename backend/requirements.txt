@@ -2,14 +2,12 @@ fastapi
 uvicorn
 python-multipart
 PyMuPDF
-sqlalchemy
-psycopg2-binary
-easyocr
 numpy
+opencv-python-headless
+Pillow
+# Florence-2 (optional, USE_FLORENCE=1)
 torch
 torchvision
 transformers==4.44.2
 einops
 timm==1.0.9
-opencv-python-headless
-Pillow

@@ -1,22 +1,26 @@
+# Document stamping stack: n8n (workflow) + stamping API (FastAPI) + review UI (Streamlit) + PostgreSQL (audit log).
+# Settings come from .env (copy .env.example). Ports are bound to localhost only.
+# NVIDIA GPU: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 services:
   n8n:
     image: docker.n8n.io/n8nio/n8n
     container_name: n8n_core
-    user: root
-    restart: always
+    user: root                                  # writes to the mounted ./n8n-data and ./simulated_cloud folders
+    restart: unless-stopped
     ports:
-      - "5678:5678"
+      - "127.0.0.1:5678:5678"
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
-      - NODE_ENV=development
+      - NODE_ENV=production
       - WEBHOOK_URL=http://localhost:5678/
-      - GENERIC_TIMEZONE=Asia/Amman
-      - N8N_USER_FOLDER=/home/node/.n8n 
-      - N8N_RESTRICT_FILE_ACCESS_TO=/
+      - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Amman}
+      - N8N_USER_FOLDER=/home/node/.n8n
+      # the workflow reads and moves files in the shared folder only
+      - N8N_RESTRICT_FILE_ACCESS_TO=${N8N_RESTRICT_FILE_ACCESS_TO:-/home/node/simulated_cloud}
       - N8N_BLOCK_FS_WRITE_ACCESS=false
-      # --- THE ULTIMATE UNLOCK KEYS ---
+      # the workflow uses the Execute Command node; keep n8n on localhost because of it
       - N8N_BLOCK_COMMAND_EXECUTION=false
       - N8N_COMMAND_EXEC_ENABLED=true
       - N8N_ENABLE_UNSAFE_CORE_NODES=true
@@ -25,65 +29,48 @@ services:
     volumes:
       - ./n8n-data:/home/node/.n8n
       - ./simulated_cloud:/home/node/simulated_cloud
-    networks:
-      - signage_network
+    networks: [signing]
 
   fastapi:
     build: ./backend
-    container_name: signage_api
-    restart: always
-    # ==========================================
-    # GPU ACCELERATION BRIDGE (RTX 3050)
-    # ==========================================
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    # ==========================================
+    container_name: stamping_api
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    env_file: [.env]
     volumes:
       - ./backend:/app
-      - ./security_ops:/app/security_ops
-      # FIX: Mount it to /home/node/... so it perfectly matches n8n
-      - ./simulated_cloud:/home/node/simulated_cloud
-    networks:
-      - signage_network
-    depends_on:
-      - db
+      - ./simulated_cloud:/home/node/simulated_cloud     # same path as inside n8n, so file paths match
+    networks: [signing]
+    depends_on: [db]
 
   db:
     image: postgres:15
-    container_name: signage_db
-    restart: always
+    container_name: signing_db
+    restart: unless-stopped
     environment:
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=secretpassword
-      - POSTGRES_DB=signage_db
+      - POSTGRES_USER=${POSTGRES_USER:-signing}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=${POSTGRES_DB:-signing_db}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - signage_network
+    networks: [signing]
 
   ui:
     build: ./ui
-    container_name: signage_ui
+    container_name: signing_ui
     ports:
-      - "8501:8501"
-    depends_on:
-      - fastapi
-    networks:
-      - signage_network
+      - "127.0.0.1:8501:8501"
+    environment:
+      - API_URL=http://fastapi:8000/stamp-document/
+    depends_on: [fastapi]
+    networks: [signing]
 
 volumes:
-  n8n_data:
   postgres_data:
 
 networks:
-  signage_network:
+  signing:
     driver: bridge

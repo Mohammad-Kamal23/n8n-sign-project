@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 from streamlit_pdf_viewer import pdf_viewer
@@ -5,10 +6,10 @@ from pdf2image import convert_from_bytes
 from streamlit_image_coordinates import streamlit_image_coordinates
 from PIL import ImageDraw
 
-# API Endpoint
-API_URL = "http://fastapi:8000/stamp-document/"
+# Stamping API (set API_URL when the backend runs somewhere else)
+API_URL = os.getenv("API_URL", "http://fastapi:8000/stamp-document/")
 
-st.set_page_config(page_title="Automated Signage", page_icon="✍️", layout="wide")
+st.set_page_config(page_title="Automated Document Stamping", page_icon="✍️", layout="wide")
 
 st.markdown("""
 <style>
@@ -27,7 +28,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="header-box"><h1>✍️ Interactive Document Signage (SaaS)</h1><p>Use AI to auto-detect signature fields, or click anywhere on the document to apply a manual override.</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="header-box"><h1>✍️ Automated Document Stamping</h1><p>Let the vision engine find the signature and stamp zones, or click anywhere on the document to place the stamp yourself.</p></div>', unsafe_allow_html=True)
 
 st.subheader("🛠️ Configuration")
 col_up1, col_up2 = st.columns(2)
@@ -91,10 +92,10 @@ if uploaded_pdf and uploaded_stamp:
         st.markdown("---")
 
         # --- OPTION 2: AI AUTO-DETECT ---
-        st.write("Or let the Vision OCR Engine find the keywords automatically.")
+        st.write("Or let the vision engine (template matching + Florence-2) find the stamp zones.")
         if st.button("🤖 Run AI Auto-Detect"):
             with st.spinner("AI is scanning pixels and analyzing text..."):
-                # Send NO coordinates, forcing the backend to use the Triple-Layer OCR Decision Tree
+                # No coordinates: the backend finds the zones itself
                 response = requests.post(API_URL, files=files)
                 
                 if response.status_code == 200:

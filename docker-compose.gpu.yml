@@ -1,0 +1,11 @@
+# Adds an NVIDIA GPU to the stamping API (Florence-2 runs much faster). Needs the NVIDIA Container Toolkit.
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
+services:
+  fastapi:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
