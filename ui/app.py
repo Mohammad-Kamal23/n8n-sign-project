@@ -6,8 +6,8 @@ from pdf2image import convert_from_bytes
 from streamlit_image_coordinates import streamlit_image_coordinates
 from PIL import ImageDraw
 
-# Stamping API (set API_URL when the backend runs somewhere else)
-API_URL = os.getenv("API_URL", "http://fastapi:8000/stamp-document/")
+# Stamping API (docker compose sets API_URL to the fastapi service)
+API_URL = os.getenv("API_URL", "http://localhost:8000/stamp-document/")
 
 st.set_page_config(page_title="Automated Document Stamping", page_icon="✍️", layout="wide")
 

@@ -1,3 +1,4 @@
+# Stamping API with template matching (the default install)
 fastapi
 uvicorn
 python-multipart
@@ -5,9 +6,3 @@ PyMuPDF
 numpy
 opencv-python-headless
 Pillow
-# Florence-2 (optional, USE_FLORENCE=1)
-torch
-torchvision
-transformers==4.44.2
-einops
-timm==1.0.9

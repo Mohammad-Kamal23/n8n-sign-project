@@ -1,0 +1,7 @@
+# Adds the Florence-2 detector (USE_FLORENCE=1). Needs about 2 GB of RAM.
+-r requirements.txt
+torch
+torchvision
+transformers==4.44.2
+einops
+timm==1.0.9

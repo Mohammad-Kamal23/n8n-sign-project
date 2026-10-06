@@ -2,26 +2,21 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# --- Install Linux graphics libraries for OpenCV/EasyOCR ---
-RUN apt-get update && apt-get install -y \
-    libgl1 \
-    libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+# USE_FLORENCE=1 adds the Florence-2 detector (about 2 GB of RAM).
+# The default image uses template matching only and runs in 512 MB.
+ARG USE_FLORENCE=0
+ENV USE_FLORENCE=${USE_FLORENCE} \
+    HF_HOME=/opt/models_cache
 
-# --- Install Python Dependencies ---
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-florence.txt ./
+RUN if [ "$USE_FLORENCE" = "1" ]; then pip install --no-cache-dir -r requirements-florence.txt; \
+    else pip install --no-cache-dir -r requirements.txt; fi
 
-# --- AI Model Caching Environment ---
-# We force HuggingFace to save the models inside our app folder so they persist.
-ENV HF_HOME=/app/models_cache
-
-# --- Pre-Fetch Models ---
-# Copy ONLY the prefetch script so Docker caches this layer permanently
+# Florence-2 weights are downloaded at build time, so the API starts without a download
 COPY prefetch_models.py .
-RUN python prefetch_models.py
+RUN if [ "$USE_FLORENCE" = "1" ]; then python prefetch_models.py; fi
 
-# --- Copy Application Code ---
 COPY . .
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# PORT is set by hosts such as Render; 8000 otherwise
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

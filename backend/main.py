@@ -11,9 +11,10 @@ Endpoints
                           writes it to OUTBOX_PATH
   POST /stamp-document/   multipart (file, stamp) used by the UI: manual placement with ?x=&y=&page_num=
                           (PDF points, 1-based page), automatic placement without them; returns the stamped PDF
-  GET  /health            models and templates loaded
+  GET  /  and  /health    status: templates loaded, Florence-2 on or off, stamp in use
 
-Every setting is an environment variable (see ../.env.example).
+Every setting is an environment variable (see ../.env.example). Florence-2 is used only with USE_FLORENCE=1 and the
+packages in requirements-florence.txt; otherwise the service runs on template matching alone.
 """
 import io
 import os
@@ -45,7 +46,7 @@ OUTBOX_PATH = os.getenv("OUTBOX_PATH", "/home/node/simulated_cloud/03_outbox")
 TEMPLATES_DIR = os.getenv("TEMPLATES_DIR", "signature_stamp_templates")
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.8"))   # template match score needed (0-1)
 FORBIDDEN_ZONE = float(os.getenv("FORBIDDEN_ZONE", "50"))     # ignore matches centred in the top-left corner (points)
-USE_FLORENCE = os.getenv("USE_FLORENCE", "1") == "1"
+USE_FLORENCE = os.getenv("USE_FLORENCE", "0") == "1"
 FLORENCE_MODEL = os.getenv("FLORENCE_MODEL", "microsoft/Florence-2-base-ft")
 FLORENCE_PROMPT = os.getenv("FLORENCE_PROMPT", "signature line or blank space for stamp")
 RENDER_ZOOM = 2                                                # pages are rendered at 2x for both detectors
@@ -221,9 +222,10 @@ def stamp_pdf(doc, stamp_content, x=None, y=None, page_num=None):
 # ==========================================
 # ENDPOINTS
 # ==========================================
+@app.get("/")
 @app.get("/health")
 async def health():
-    return {"templates": len(templates), "florence": model is not None,
+    return {"status": "ok", "templates": len(templates), "florence": model is not None,
             "stamp": STAMP_PATH if os.path.exists(STAMP_PATH) else (EXAMPLE_STAMP_PATH + " (example)")}
 
 

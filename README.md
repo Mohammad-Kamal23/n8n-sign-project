@@ -1,8 +1,8 @@
 # Automated document stamping (n8n + vision AI)
 
-An n8n workflow that stamps PDFs. The API finds where the signature or stamp goes on each page (English or Arabic
-layouts), places it and returns the file to the workflow. A small web UI does the same, with a manual click-to-place
-mode.
+A FastAPI service that finds the signature or stamp area on each page of a PDF (English or Arabic forms) and
+places a stamp there. An n8n workflow sends it PDFs from a shared folder; a Streamlit UI stamps a PDF
+automatically or where you click.
 
 ![Python](https://img.shields.io/badge/Python-FastAPI-009688?logo=fastapi&logoColor=white)
 ![n8n](https://img.shields.io/badge/n8n-workflow-EA4B71)
@@ -13,94 +13,88 @@ mode.
 
 ```mermaid
 flowchart LR
-    A[PDF dropped in the<br/>shared folder] --> B[n8n workflow]
+    A[PDF in the<br/>shared folder] --> B[n8n workflow]
     B -- POST /process-path --> C[Stamping API]
-    C --> D[Security check<br/>PDF + SHA-256]
-    D --> E1[OpenCV template<br/>matching]
-    D --> E2[Florence-2<br/>phrase grounding]
-    E1 --> F[Fuse boxes<br/>non-max suppression]
+    C --> E1[OpenCV template<br/>matching]
+    C --> E2[Florence-2<br/>optional]
+    E1 --> F[Merge overlapping<br/>boxes]
     E2 --> F
-    F --> G[Stamp each zone<br/>or an audit page]
-    G --> H[03_outbox/stamped_*.pdf<br/>metadata stripped]
-    H --> B
-    B --> I[(PostgreSQL<br/>audit log)]
+    F --> G[Stamp each area<br/>or an audit page]
+    G --> H[03_outbox/stamped_*.pdf]
 ```
 
-Each page is rendered and searched by two detectors:
-
-1. **Template matching (OpenCV)** against example signature / stamp zones in
-   `backend/signature_stamp_templates/` - fast and exact for the layouts you use (66 synthetic examples included,
-   English and Arabic).
-2. **Florence-2 phrase grounding** ("signature line or blank space for stamp") - a zero-shot vision-language model
-   that finds zones in layouts no template covers.
-
-Their boxes are merged so a zone is never stamped twice, matches in the top-left page corner are ignored, and the
-stamp is centred on each zone and kept inside the page. If nothing is found, an **audit page** is appended and
-stamped, so every processed document carries an approval. Before processing, the file is checked to really be a PDF
-and its SHA-256 is returned with the result; the output's metadata is stripped.
+1. Each page is rendered and compared with example signature and stamp areas in
+   `backend/signature_stamp_templates/` (OpenCV template matching; 66 synthetic English and Arabic examples).
+2. With `USE_FLORENCE=1`, Florence-2 phrase grounding ("signature line or blank space for stamp") also looks for
+   areas that no template covers.
+3. Overlapping boxes are merged, so each area is stamped once. Matches in the top-left corner are ignored.
+4. If no area is found, an audit page is added and stamped.
+5. Metadata is removed from the output. `/process-path` also checks that the file is a PDF and returns its SHA-256.
 
 ## Run it
 
 ```bash
-cp .env.example .env                      # set POSTGRES_PASSWORD; put your stamp at backend/stamp.png (optional)
-docker compose up --build -d              # CPU
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d   # NVIDIA GPU
+cp .env.example .env                      # set POSTGRES_PASSWORD; optional: your stamp at backend/stamp.png
+docker compose up --build -d
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d   # with an NVIDIA GPU
 ```
 
-| Service | Address | What it is |
+| Service | Address | Use |
 |---|---|---|
-| n8n | http://localhost:5678 | the workflow (inbox -> API -> outbox -> audit log / e-mail) |
-| Stamping API | http://localhost:8000/health | FastAPI: `/process-path` (workflow), `/stamp-document/` (UI) |
-| UI | http://localhost:8501 | upload a PDF and a stamp; auto-detect or click to place |
-| PostgreSQL | localhost:5432 | audit log written by the workflow |
+| n8n | http://localhost:5678 | the workflow |
+| Stamping API | http://localhost:8000/health | `/process-path` (workflow), `/stamp-document/` (UI) |
+| UI | http://localhost:8501 | upload a PDF and a stamp |
+| PostgreSQL | localhost:5432 | database for the workflow |
 
-All ports are bound to `localhost`. Without your own `backend/stamp.png` a clearly marked sample stamp is used.
-Set `USE_FLORENCE=0` in `.env` for a light, template-only setup (no model download).
+Ports are bound to `localhost`. Without `backend/stamp.png`, a sample stamp is used.
+`USE_FLORENCE=1` in `.env` adds Florence-2 (larger image, about 2 GB of RAM); `0` uses template matching only.
 
-### Without Docker (API only)
+### API only
 
 ```bash
 cd backend
-pip install -r requirements.txt           # or only fastapi uvicorn python-multipart PyMuPDF numpy opencv-python-headless Pillow
-USE_FLORENCE=0 INPUT_ROOT=$PWD/.. uvicorn main:app --port 8000
-curl -F file=@form.pdf -F stamp=@stamp.example.png "http://localhost:8000/stamp-document/" -o stamped.pdf
+pip install -r requirements.txt           # requirements-florence.txt adds Florence-2 (then USE_FLORENCE=1)
+uvicorn main:app --port 8000
+curl -F file=@form.pdf -F stamp=@stamp.example.png http://localhost:8000/stamp-document/ -o stamped.pdf
 curl -F file=@form.pdf -F stamp=@stamp.example.png "http://localhost:8000/stamp-document/?x=420&y=700&page_num=1" -o manual.pdf
 ```
 
+`x` and `y` are PDF points from the top-left corner of the page; the stamp is centred there.
+
+`backend/Dockerfile` builds the template-matching API by default, which runs in 512 MB of RAM (for example on
+Render's free tier). Build it with `--build-arg USE_FLORENCE=1` to include Florence-2. The container listens on
+`$PORT` when it is set, otherwise on 8000.
+
 ## The n8n workflow
 
-n8n runs the automation around the API: it picks up new PDFs in the shared folder (`simulated_cloud/`, standing in
-for a cloud drive), calls `POST http://fastapi:8000/process-path` with `{"file_path": "/home/node/simulated_cloud/..."}`,
-receives the output path, SHA-256 and stamp positions, and records or forwards the result. The nodes enabled for
-it are HTTP Request, Execute Command, Postgres (audit log) and Gmail (notifications). The API only reads files
-below `INPUT_ROOT` and writes to `OUTBOX_PATH` (`simulated_cloud/03_outbox` by default).
-
-Workflows live in n8n's own storage (`n8n-data/`, not in git). Export yours (*Workflow -> Download*) into `n8n/`
-to keep it versioned with the code.
+The workflow sends new PDFs from the shared folder (`simulated_cloud/`) to
+`POST http://fastapi:8000/process-path` with `{"file_path": "/home/node/simulated_cloud/..."}`. The API only reads
+files below `INPUT_ROOT` and writes `stamped_<name>` to `OUTBOX_PATH` (`simulated_cloud/03_outbox`).
+n8n stores workflows in `n8n-data/` (not in git); export yours to `n8n/` to keep it with the code.
 
 ## Settings
 
-Every setting is an environment variable in [`.env.example`](.env.example): stamp image and size, template match
-threshold, Florence-2 on/off, model and prompt, input and output folders, database credentials.
+All settings are environment variables, listed in [`.env.example`](.env.example).
 
-## Repository layout
+## Layout
 
 ```
 backend/
-  main.py                       stamping API (detectors, fusion, placement, endpoints)
-  security_service.py           PDF check, SHA-256, metadata stripping
-  prefetch_models.py            downloads Florence-2 into the image at build time
-  signature_stamp_templates/    example zones for template matching (synthetic)
-  stamp.example.png             sample stamp (not valid for real use)
-ui/app.py                       Streamlit UI
-docker-compose.yml              n8n + API + UI + PostgreSQL;  docker-compose.gpu.yml adds a GPU
+  main.py                       stamping API
+  security_service.py           PDF check, SHA-256, metadata removal
+  prefetch_models.py            downloads Florence-2 at image build time (USE_FLORENCE=1)
+  requirements.txt              API with template matching
+  requirements-florence.txt     adds Florence-2
+  signature_stamp_templates/    example areas for template matching (synthetic)
+  stamp.example.png             sample stamp
+ui/app.py                       Streamlit UI (API_URL sets the API address)
+docker-compose.yml              n8n + API + UI + PostgreSQL; docker-compose.gpu.yml adds a GPU
 ```
 
 ## Security notes
 
-- Keep the stack on `localhost` or behind authentication: the workflow uses n8n's Execute Command node.
-- Your real stamp or signature image stays out of git (`backend/stamp.png` is ignored).
-- `.env` holds the database password and is ignored by git.
+- The compose file enables n8n's Execute Command node, so keep the stack on `localhost` or behind authentication.
+- Your stamp (`backend/stamp.png`) and `.env` are ignored by git.
 
 ## Author
 

@@ -16,7 +16,7 @@ def imports_without_flash_attn(filename):
     return imports
 
 
-if os.getenv("USE_FLORENCE", "1") == "1":
+if os.getenv("USE_FLORENCE", "0") == "1":
     print(f"Downloading {MODEL} ...")
     with patch("transformers.dynamic_module_utils.get_imports", imports_without_flash_attn):
         AutoProcessor.from_pretrained(MODEL, trust_remote_code=True)

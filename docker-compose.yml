@@ -32,7 +32,10 @@ services:
     networks: [signing]
 
   fastapi:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        USE_FLORENCE: ${USE_FLORENCE:-0}       # 1 = also install Florence-2 (set in .env)
     container_name: stamping_api
     restart: unless-stopped
     ports:
